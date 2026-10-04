@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!--
+  Configuración de labwc para el kiosk Scrapper.
+
+  Lo esencial aquí es el mapeo del panel táctil de 7" (HDMI-A-1) a su propia
+  salida. Sin esto, labwc extiende el área táctil sobre TODO el escritorio
+  combinado (HDMI-A-1 1920px + HDMI-A-2 3840px = 5760px de ancho), así que un
+  toque en la esquina derecha de la pantalla de 7" cae en coordenadas de la TV
+  y el táctil queda completamente desalineado.
+
+  <touch> con mapToOutput ata los eventos táctiles a la salida indicada.
+  - deviceName vacío  -> aplica a todos los dispositivos táctiles.
+  - mapToOutput       -> nombre de salida wlroots (el mismo que usa kanshi).
+
+  Si tu panel táctil tiene un nombre concreto (lo ves con `libinput list-devices`
+  o en el log de labwc), puedes fijarlo en deviceName para ser más específico.
+-->
+<labwc_config>
+  <core>
+    <!-- Sin decoración de ventanas: kiosk a pantalla completa. -->
+    <decoration>none</decoration>
+  </core>
+
+  <!-- Mapear TODOS los dispositivos táctiles a la pantalla de 7" (HDMI-A-1). -->
+  <touch deviceName="" mapToOutput="HDMI-A-1" />
+
+  <mouse>
+    <!-- Ocultar el cursor tras 5 s de inactividad (entorno táctil). -->
+    <hideCursor>
+      <onKey>yes</onKey>
+      <timeout>5000</timeout>
+    </hideCursor>
+  </mouse>
+</labwc_config>

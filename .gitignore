@@ -1,0 +1,14 @@
+# Entornos y cachés de Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+scrapper-venv/
+
+# Configuración local con secretos
+config/.env
+
+# Datos generados en tiempo de ejecución
+data/events.json
+*.log

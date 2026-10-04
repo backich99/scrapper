@@ -1,0 +1,43 @@
+# Configuración del scraper de streams deportivos.
+#
+# Añadir una fuente o un deporte nuevo es solo cuestión de editar este fichero;
+# no hace falta tocar el código.
+#
+# Estrategias disponibles:
+#   static  -> HTML plano (requests + BeautifulSoup), navegación recursiva.
+#   dynamic -> una sola página con JavaScript (Playwright); captura .m3u8 de la red.
+#   hybrid  -> listado estático de partidos + resolución dinámica del stream de cada uno.
+
+settings:
+  output: data/events.json
+  request_timeout: 30
+  max_depth: 4
+  max_events: 40
+
+sources:
+  # --- StreamEast (NFL) ---------------------------------------------------- #
+  # La página /nfl-streams/ lista los partidos (enlaces /nfl/<equipos>-vs-<equipos>/).
+  # Cada partido embebe un reproductor en iframes anidados que pide un .m3u8 con
+  # token temporal (caduca), por eso re-scrapeamos cada hora.
+  - name: streameast-nfl
+    enabled: true
+    url: "https://v2.streameast.ga/nfl-streams/"
+    strategy: hybrid
+    sports:
+      - nfl
+    link_selector: "a"
+    # Enlaces a páginas de partido concreto (no a páginas de equipo).
+    match_pattern: "/nfl/[a-z0-9-]+-vs-[a-z0-9-]+"
+    stream_pattern: "\\.m3u8"
+    wait_ms: 15000         # dar tiempo a que el reproductor del iframe pida el manifiesto
+    max_matches: 12         # nº máximo de partidos a resolver por ejecución
+
+# --- Plantilla de ejemplo (desactivada) ------------------------------------ #
+#  - name: ejemplo-dynamic
+#    enabled: false
+#    url: "https://otra-fuente.tld/partido"
+#    strategy: dynamic
+#    sports: [nba]
+#    wait_for: "video"
+#    wait_ms: 8000
+#    stream_pattern: "\\.m3u8"

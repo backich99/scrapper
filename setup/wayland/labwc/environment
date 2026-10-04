@@ -1,0 +1,10 @@
+# Variables de entorno de la sesión labwc del kiosk.
+#
+# IMPORTANTE: NO definir aquí DISPLAY ni SDL_VIDEODRIVER. Si se define DISPLAY,
+# el propio labwc intenta arrancar con backend X11 ("Failed to open xcb
+# connection") en vez de DRM/KMS y no arranca.
+#
+# La UI Kivy necesita X11/Xwayland, pero esas variables se exportan SOLO para
+# el proceso de la UI dentro de ~/.config/labwc/autostart, no para labwc.
+
+# (Intencionalmente vacío de DISPLAY/SDL_VIDEODRIVER.)

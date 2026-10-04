@@ -1,0 +1,35 @@
+#!/bin/sh
+# Autostart de labwc para el kiosk Scrapper.
+#
+# 1) kanshi aplica la disposición de salidas (7" y TV como pantallas separadas).
+# 2) Se lanza la UI Kivy sobre Wayland.
+#
+# Nota: labwc sustituye __VENV__ y __PROJECT__ al instalar (ver 07-wayland-kiosk.sh).
+
+# Disposición de pantallas (idempotente): la de 7" a la izquierda, la TV a la derecha.
+kanshi &
+
+# Ocultar el cursor tras inactividad y evitar ahorro de energía en las pantallas.
+# (labwc respeta estas vía su propia config; aquí solo lanzamos la app.)
+
+# Lanzar la interfaz. El SDL2 del wheel de Kivy no tiene backend Wayland, así que
+# la UI corre sobre Xwayland (X11). labwc gestiona igualmente las 2 salidas HDMI.
+# cd al proyecto para que 'python -m ui.app' encuentre el paquete.
+export SDL_VIDEODRIVER=x11
+export DISPLAY=:0
+export KIVY_WINDOW=sdl2
+# Forzar la ventana de la UI a la pantalla táctil de 7" (HDMI-A-1, en 0,0 del
+# escritorio X combinado). SDL_VIDEO_WINDOW_POS lo respeta el backend SDL2 de
+# Kivy en X11 (Window.left/top por sí solo no siempre basta en Xwayland). Sin
+# esto la ventana puede abrir en la TV, donde no hay táctil.
+export SDL_VIDEO_WINDOW_POS=0,0
+export SCRAPPER_UI_LEFT=0
+export SCRAPPER_UI_TOP=0
+export SCRAPPER_UI_WIDTH=1920
+export SCRAPPER_UI_HEIGHT=1080
+# Tablero de CANALES de Deporte-Libre (Opción A). Para volver a la agenda
+# ESPN/StreamEast, cambiar a "agenda" o quitar esta línea.
+export SCRAPPER_UI_MODE=canales
+# Dirigir el vídeo (mpv) a la TV por nombre de output wlroots (más fiable que el índice).
+export SCRAPPER_MPV_OUTPUT=HDMI-A-2
+cd __PROJECT__ && __VENV__/bin/python -m ui.app >> /tmp/scrapper-ui.log 2>&1 &

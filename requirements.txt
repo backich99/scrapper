@@ -1,0 +1,15 @@
+# Dependencias del proyecto Scrapper
+# Versiones pinneadas para reproducibilidad en la Raspberry Pi.
+
+# --- Scraping ---
+requests==2.32.3
+beautifulsoup4==4.12.3
+PyYAML==6.0.2
+# Playwright 1.48+ depende de greenlet>=3.1, que sí provee wheels para
+# Python 3.13 (versiones anteriores intentan compilar greenlet 3.0.x y fallan).
+playwright==1.48.0
+
+# --- Interfaz táctil ---
+# Kivy 2.3.1 es la primera versión con soporte oficial para Python 3.13
+# (la Raspberry con Debian 13 trixie trae Python 3.13).
+kivy==2.3.1

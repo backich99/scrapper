@@ -1,0 +1,18 @@
+[Unit]
+Description=Scrapper — rastreo de streams deportivos (una ejecución)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+# Ejecuta el scraper usando el entorno virtual del proyecto.
+ExecStart=__VENV_DIR__/bin/python -m scraper.main --config config/sources.yaml
+# El resultado se escribe en data/events.json (escritura atómica).
+StandardOutput=journal
+StandardError=journal
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

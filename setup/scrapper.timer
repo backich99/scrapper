@@ -1,0 +1,12 @@
+[Unit]
+Description=Ejecuta el scraper de streams cada hora
+
+[Timer]
+# Cada hora, en punto. Persistent recupera ejecuciones perdidas (p. ej. tras apagado).
+OnCalendar=hourly
+Persistent=true
+# Pequeño desfase para no golpear las fuentes exactamente en el minuto 0.
+RandomizedDelaySec=90
+
+[Install]
+WantedBy=timers.target

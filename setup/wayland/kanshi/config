@@ -1,0 +1,12 @@
+# Disposición de salidas para el kiosk (kanshi).
+#
+# HDMI-A-1 = pantalla táctil de 7" (1080p) -> interfaz, a la izquierda (0,0).
+# HDMI-A-2 = TV de 65" (4K)               -> vídeo,     a la derecha.
+#
+# Al estar en posiciones distintas (no solapadas) son pantallas INDEPENDIENTES,
+# no clonadas. Ajusta los nombres si wlr-randr muestra otros.
+
+profile kiosk {
+    output "HDMI-A-1" enable mode 1920x1080 position 0,0
+    output "HDMI-A-2" enable mode 3840x2160 position 1920,0
+}
