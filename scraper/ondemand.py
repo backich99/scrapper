@@ -37,6 +37,9 @@ _MATCH_PATTERN = re.compile(r"/nfl/[a-z0-9-]+-vs-[a-z0-9-]+")
 _STREAM_PATTERN = re.compile(r"\.m3u8")
 # Espera para que el reproductor del iframe pida el manifiesto (ms).
 _WAIT_MS = 30000
+# Espera al cargar el listado con el navegador: deja que el reto de Cloudflare se
+# resuelva y que las tarjetas de partido se rendericen antes de leer el HTML (ms).
+_LISTING_WAIT_MS = 12000
 
 
 @dataclass
@@ -52,26 +55,52 @@ def _referrer_for(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}/" if parsed.netloc else ""
 
 
-def _find_match_url(listing_url: str, team_a_terms: list[str],
-                    team_b_terms: list[str], timeout: int) -> str | None:
-    """Descarga el listado y devuelve la URL de partido que menciona ambos equipos.
+def _fetch_listing_html(listing_url: str, timeout: int) -> str | None:
+    """Descarga el HTML del listado con el navegador (Playwright).
+
+    El listado está detrás del reto "managed challenge" de Cloudflare, que
+    `requests` no puede resolver (devuelve 403 con la página de reto). Un
+    Chromium real sí lo pasa, igual que en la captura del stream. Reutilizamos el
+    mismo patrón de arranque (reglas DoH + _DEFAULT_UA) que `resolve_match`.
+
+    Devuelve el HTML renderizado o None si Playwright no está disponible o la
+    página no se pudo cargar (el llamador hará el fallback con requests).
+    """
+    sync_playwright = _import_playwright("ondemand")
+    if sync_playwright is None:
+        return None
+
+    try:
+        with sync_playwright() as p:
+            from .dns_fallback import DEFAULT_DOH_HOSTS
+            args = _chromium_host_rules(DEFAULT_DOH_HOSTS)
+            browser = p.chromium.launch(headless=True, args=args)
+            page = browser.new_context(user_agent=_DEFAULT_UA).new_page()
+            try:
+                page.goto(listing_url, timeout=timeout * 1000,
+                          wait_until="domcontentloaded")
+                # Dar tiempo a que Cloudflare libere y rendericen las tarjetas.
+                page.wait_for_timeout(_LISTING_WAIT_MS)
+                return page.content()
+            finally:
+                browser.close()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("on-demand: no se pudo cargar el listado con navegador %s: %s",
+                    listing_url, exc)
+        return None
+
+
+def _pick_match_url(html: str, listing_url: str, team_a_terms: list[str],
+                    team_b_terms: list[str]) -> str | None:
+    """Dado el HTML del listado, devuelve la URL de partido que menciona ambos equipos.
 
     Cada equipo aporta varios términos candidatos (abreviatura, ciudad, apodo);
     basta con que el slug contenga AL MENOS uno de cada equipo.
     """
-    session = make_session()
-    session.headers.update({"User-Agent": _DEFAULT_UA})
-    try:
-        resp = session.get(listing_url, timeout=timeout)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        log.warning("on-demand: no se pudo cargar el listado %s: %s", listing_url, exc)
-        return None
-
     a_terms = [t.lower() for t in team_a_terms if t]
     b_terms = [t.lower() for t in team_b_terms if t]
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     for a in soup.select("a"):
         href = a.get("href")
         if not href:
@@ -88,6 +117,32 @@ def _find_match_url(listing_url: str, team_a_terms: list[str],
 
     log.info("on-demand: ningún enlace del listado casa con %s / %s", a_terms, b_terms)
     return None
+
+
+def _find_match_url(listing_url: str, team_a_terms: list[str],
+                    team_b_terms: list[str], timeout: int) -> str | None:
+    """Obtiene el listado y devuelve la URL de partido que menciona ambos equipos.
+
+    El listado se descarga con el navegador porque está tras Cloudflare; si eso
+    falla (Playwright ausente o render fallido) se cae al fetch con requests, que
+    sigue sirviendo en redes sin el reto.
+    """
+    html = _fetch_listing_html(listing_url, timeout)
+
+    if html is None:
+        # Fallback: fetch estático con requests (suele dar 403 bajo Cloudflare,
+        # pero en redes sin el reto funciona y no cuesta nada intentarlo).
+        session = make_session()
+        session.headers.update({"User-Agent": _DEFAULT_UA})
+        try:
+            resp = session.get(listing_url, timeout=timeout)
+            resp.raise_for_status()
+            html = resp.text
+        except requests.RequestException as exc:
+            log.warning("on-demand: no se pudo cargar el listado %s: %s", listing_url, exc)
+            return None
+
+    return _pick_match_url(html, listing_url, team_a_terms, team_b_terms)
 
 
 def resolve_match(team_a_terms: list[str], team_b_terms: list[str],
