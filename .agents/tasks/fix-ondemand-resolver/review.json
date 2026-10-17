@@ -1,0 +1,24 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "label": "End-to-end capture unverified",
+      "severity": "non-blocking",
+      "confidence": "confirmed",
+      "detail": "The .m3u8 capture step (_fetch_listing_html browser fetch and full resolve_match path) was never run because Playwright is absent in the dev env. The Pi-side live check in verification.md step 5 is still pending and is the only thing that proves the user-visible tap path plays. Must be run on the device before declaring the user's symptom fixed."
+    },
+    {
+      "label": "Hybrid path still broken (out of scope)",
+      "severity": "non-blocking",
+      "confidence": "likely",
+      "detail": "_resolve_hybrid in resolvers.py fetches the same listing with requests + make_session and hits the same Cloudflare 403. Correctly left out of scope and flagged in the commit body; track it as a separate task so the hourly pre-scrape doesn't silently keep failing."
+    },
+    {
+      "label": "Weak decoy assertion in test",
+      "severity": "non-blocking",
+      "confidence": "confirmed",
+      "detail": "test_team_decoy_is_never_returned asserts `url is None or \"/teams/\" not in url`, which passes trivially because the real Raiders-vs-Patriots anchor matches the given terms first. The decoy is genuinely excluded by the -vs- regex so the test is not wrong, but the assertion does not isolate the decoy. Optional tightening."
+    }
+  ],
+  "reviewDoc": "/home/karlos/Kiro/scrapper/.agents/tasks/fix-ondemand-resolver/review.md"
+}

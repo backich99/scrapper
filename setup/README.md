@@ -36,6 +36,9 @@ sudo bash setup/05-kiosk.sh
 
 # 6. (modelo nuevo) Desactivar el scraper horario si estaba instalado
 sudo bash setup/06-scraper-timer.sh
+
+# 7. Hora: zona horaria + NTP + fake-hwclock (imprescindible: la Pi no tiene RTC)
+sudo bash setup/09-time-sync.sh
 ```
 
 ## Qué hace cada script
@@ -48,6 +51,7 @@ sudo bash setup/06-scraper-timer.sh
 | `04-static-ip.sh`         | Fallback IP estática `10.10.0.246` vía `nmcli` (gw `10.10.0.1`, dns `10.10.0.210`). |
 | `05-kiosk.sh`             | Instala Xorg mínimo + mpv + venv, escribe `~/.xinitrc` e instala `kiosk.service`. |
 | `06-scraper-timer.sh`     | Desactiva/elimina el scraper horario (modelo nuevo: scraping on-demand al pulsar). |
+| `09-time-sync.sh`         | Zona horaria + NTP (`timedatectl`) + `fake-hwclock`. La Pi no tiene RTC, sin esto el reloj se queda en una fecha vieja al arrancar sin red. |
 
 ## Unidades systemd (plantillas)
 

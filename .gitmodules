@@ -1,0 +1,3 @@
+[submodule "live-sport-plugin/live-sport-plugin"]
+	path = live-sport-plugin/live-sport-plugin
+	url = https://github.com/backich99/live-sport-plugin
