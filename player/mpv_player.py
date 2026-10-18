@@ -23,7 +23,8 @@ class MpvPlayer:
     """Lanza y detiene mpv dirigido al output de la TV bajo Wayland."""
 
     def __init__(self, screen: int | None = None, output: str | None = None,
-                 referrer: str | None = None, extra_args: list[str] | None = None) -> None:
+                 referrer: str | None = None, origin: str | None = None,
+                 extra_args: list[str] | None = None) -> None:
         # Índice de pantalla de la TV (HDMI1). En la disposición kanshi la TV es la 2ª -> índice 1.
         if screen is None:
             screen = int(os.environ.get("SCRAPPER_MPV_SCREEN", "1"))
@@ -37,6 +38,9 @@ class MpvPlayer:
         self.geometry = os.environ.get("SCRAPPER_MPV_GEOMETRY", "3840x2160+0+0")
         # Referer HTTP: muchos CDN de streams devuelven 403 sin él.
         self.referrer = referrer if referrer is not None else os.environ.get("SCRAPPER_MPV_REFERRER", "")
+        # Origin HTTP: algunos streams .m3u8 directos (notWebReady, con
+        # behaviorHints.proxyHeaders) exigen también la cabecera Origin.
+        self.origin = origin if origin is not None else os.environ.get("SCRAPPER_MPV_ORIGIN", "")
         self.extra_args = extra_args or []
         self._proc: subprocess.Popen | None = None
 
@@ -44,14 +48,45 @@ class MpvPlayer:
     def is_available() -> bool:
         return shutil.which("mpv") is not None
 
-    def play(self, stream_url: str, referrer: str | None = None) -> None:
-        """Reproduce stream_url en la TV, deteniendo cualquier reproducción previa."""
+    def play(self, stream_url: str, referrer: str | None = None,
+             origin: str | None = None) -> None:
+        """Reproduce stream_url en la TV, deteniendo cualquier reproducción previa.
+
+        ``referrer`` y ``origin`` son cabeceras HTTP opcionales que algunos CDN
+        exigen (si no, devuelven 403). Si no se pasan, se usan los valores por
+        defecto de la instancia (SCRAPPER_MPV_REFERRER / SCRAPPER_MPV_ORIGIN).
+        """
         if not self.is_available():
             raise RuntimeError("mpv no está instalado (comando 'mpv' no encontrado).")
 
         self.stop()
 
+        cmd = self._build_cmd(stream_url, referrer=referrer, origin=origin)
+
+        # Entorno para mpv: forzar Wayland nativo y NO heredar el X11 de la UI.
+        # La UI Kivy corre sobre Xwayland (exporta DISPLAY/SDL_VIDEODRIVER), pero
+        # mpv debe hablar Wayland directamente con labwc para respetar el output.
+        env = dict(os.environ)
+        env.pop("DISPLAY", None)
+        env.pop("SDL_VIDEODRIVER", None)
+        env.setdefault("XDG_SESSION_TYPE", "wayland")
+        if not env.get("WAYLAND_DISPLAY"):
+            env["WAYLAND_DISPLAY"] = "wayland-0"
+
+        target = self.output or f"pantalla {self.screen}"
+        log.info("Lanzando mpv en %s (Wayland): %s", target, stream_url)
+        self._proc = subprocess.Popen(cmd, env=env)
+
+    def _build_cmd(self, stream_url: str, referrer: str | None = None,
+                   origin: str | None = None) -> list[str]:
+        """Construye la lista de argumentos de mpv (sin lanzar el proceso).
+
+        Separado de :meth:`play` para poder verificarlo en tests sin arrancar
+        mpv. Los argumentos de reproducción (``referrer``/``origin``) tienen
+        prioridad sobre los valores por defecto de la instancia.
+        """
         ref = referrer or self.referrer
+        org = origin or self.origin
 
         cmd = [
             "mpv",
@@ -98,6 +133,11 @@ class MpvPlayer:
         # Referer HTTP para CDN que lo exigen (evita 403).
         if ref:
             cmd.append(f"--referrer={ref}")
+        # Origin HTTP para streams .m3u8 directos que lo exigen (evita 403).
+        # mpv acepta cabeceras arbitrarias con --http-header-fields en formato
+        # 'Cabecera: valor'.
+        if org:
+            cmd.append(f"--http-header-fields=Origin: {org}")
         # User-Agent: algunos CDN validan también el UA junto con el Referer.
         user_agent = os.environ.get(
             "SCRAPPER_USER_AGENT",
@@ -106,20 +146,7 @@ class MpvPlayer:
         cmd.append(f"--user-agent={user_agent}")
         cmd.extend(self.extra_args)
         cmd.append(stream_url)
-
-        # Entorno para mpv: forzar Wayland nativo y NO heredar el X11 de la UI.
-        # La UI Kivy corre sobre Xwayland (exporta DISPLAY/SDL_VIDEODRIVER), pero
-        # mpv debe hablar Wayland directamente con labwc para respetar el output.
-        env = dict(os.environ)
-        env.pop("DISPLAY", None)
-        env.pop("SDL_VIDEODRIVER", None)
-        env.setdefault("XDG_SESSION_TYPE", "wayland")
-        if not env.get("WAYLAND_DISPLAY"):
-            env["WAYLAND_DISPLAY"] = "wayland-0"
-
-        target = self.output or f"pantalla {self.screen}"
-        log.info("Lanzando mpv en %s (Wayland): %s", target, stream_url)
-        self._proc = subprocess.Popen(cmd, env=env)
+        return cmd
 
     def is_playing(self) -> bool:
         return self._proc is not None and self._proc.poll() is None

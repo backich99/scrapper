@@ -1,0 +1,14 @@
+[Unit]
+Description=Dispara la auto-update del repositorio propio del kiosk cada hora
+
+[Timer]
+# Cada hora, en punto. Persistent recupera una ejecución perdida (p. ej. si la
+# Raspberry estuvo apagada durante el tick), aplicándola en el siguiente arranque.
+OnCalendar=hourly
+Persistent=true
+# Pequeño desfase para no golpear el remoto git exactamente en el minuto 0.
+RandomizedDelaySec=120
+Unit=scrapper-update.service
+
+[Install]
+WantedBy=timers.target

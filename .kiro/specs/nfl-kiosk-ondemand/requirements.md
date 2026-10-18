@@ -73,6 +73,16 @@ pero con control cuando estoy trabajando.
 7. CUANDO ocurre un fallo durante la actualización (red, git, reinicio de servicio)
    ENTONCES el sistema DEBERÁ registrar el error en el log y conservar el estado
    anterior en ejecución (no dejar el kiosk caído).
+8. CUANDO el timer de actualización se dispara Y hay una reproducción activa
+   ENTONCES el sistema NO DEBERÁ aplicar la actualización ni reiniciar servicios,
+   y DEBERÁ marcar la actualización como **pendiente**.
+9. CUANDO una reproducción activa termina (el usuario pulsa Detener o el stream
+   finaliza) Y existe una actualización pendiente ENTONCES el sistema DEBERÁ
+   aplicarla de inmediato (fetch + aplicar + reiniciar), sin esperar al siguiente
+   tick del timer.
+10. SI una actualización quedó pendiente y la reproducción nunca termina ENTONCES
+    el siguiente tick del timer DEBERÁ reintentarla, respetando siempre la regla
+    de no interrumpir una reproducción activa.
 
 ### Requisito 2 — Actualización controlada del plugin desde upstream
 
@@ -93,6 +103,9 @@ de formato de las fuentes se resuelvan vía actualización en lugar de editar c�
    es un acto deliberado y separado).
 4. CUANDO el submódulo cambia de commit ENTONCES el proceso de actualización DEBERÁ
    reconstruir (build) el plugin antes de reiniciar su servicio.
+5. CUANDO se solicita actualizar el plugin Y hay una reproducción activa ENTONCES
+   el sistema NO DEBERÁ reconstruir ni reiniciar el servicio del plugin, aplicando
+   la misma regla de pendiente/aplazamiento del Requisito 1 (criterios 8-10).
 
 ### Requisito 3 — Plugin como servicio Node local
 
@@ -114,22 +127,31 @@ HTTP sin depender de servicios externos ni de un navegador.
 5. El build del plugin DEBERÁ completarse (incluyendo assets WASM) antes de que su
    servicio se marque como activo.
 
-### Requisito 4 — Listado de partidos NFL de hoy desde el plugin
+### Requisito 4 — Listado de partidos NFL de la jornada desde el plugin
 
 **Historia de usuario:** Como usuario frente a la pantalla de 7", quiero ver los
-partidos de NFL de hoy, para elegir cuál ver.
+partidos de la jornada NFL en curso, con los de hoy y en vivo destacados, para
+elegir cuál ver y también anticipar los que vienen (p. ej. el MNF del lunes).
+
+**Definición de jornada:** la jornada NFL va de **martes a lunes** (arranca con el
+TNF del jueves y cierra con el Monday Night Football del lunes). La "jornada en
+curso" es la ventana martes 00:00 → lunes 23:59 (en la zona del kiosk) que contiene
+el día de hoy.
 
 #### Criterios de aceptación
 
-1. CUANDO la UI se abre o refresca ENTONCES el sistema DEBERÁ obtener del plugin la
-   lista de partidos de NFL correspondientes al día actual.
-2. CUANDO el plugin devuelve partidos ENTONCES la UI DEBERÁ mostrar un botón grande
+1. CUANDO la UI se abre o refresca ENTONCES el sistema DEBERÁ obtener del plugin los
+   partidos de NFL de la jornada en curso (ventana martes→lunes que contiene hoy).
+2. CUANDO se muestran los partidos de la jornada ENTONCES la UI DEBERÁ ordenarlos
+   priorizando los **en vivo** y los **de hoy** en la parte superior, y mostrar los
+   demás de la jornada como **próximos** debajo (modelo híbrido).
+3. CUANDO el plugin devuelve partidos ENTONCES la UI DEBERÁ mostrar un botón grande
    por partido, reutilizando la interfaz actual (agenda/scores/teams/logos).
-3. CUANDO un partido fue marcado previamente como "no disponible" (ver Requisito 6)
+4. CUANDO un partido fue marcado previamente como "no disponible" (ver Requisito 6)
    ENTONCES la UI DEBERÁ indicarlo visualmente en el menú.
-4. SI el plugin no está disponible o no devuelve partidos ENTONCES el sistema DEBERÁ
+5. SI el plugin no está disponible o no devuelve partidos ENTONCES el sistema DEBERÁ
    intentar el fallback del scraper Python existente (ver Requisito 5).
-5. La UI DEBERÁ refrescar la lista de partidos de forma periódica o bajo demanda sin
+6. La UI DEBERÁ refrescar la lista de partidos de forma periódica o bajo demanda sin
    requerir reinicio de la aplicación.
 
 ### Requisito 5 — Fallback al scraper Python existente
@@ -139,7 +161,7 @@ sistema use el scraper que ya existe como respaldo, para no quedarme sin partido
 
 #### Criterios de aceptación
 
-1. CUANDO el plugin no devuelve partidos NFL de hoy ENTONCES el sistema DEBERÁ
+1. CUANDO el plugin no devuelve partidos NFL de la jornada ENTONCES el sistema DEBERÁ
    recurrir al scraper Python existente (`scraper/`) como fuente de respaldo.
 2. CUANDO el plugin no devuelve streams para un partido seleccionado ENTONCES el
    sistema DEBERÁ intentar resolver ese partido mediante el scraper Python existente.
@@ -206,3 +228,87 @@ kiosk desde un archivo de configuración, para no tener que modificar código.
    usarlo en lugar del valor por defecto.
 3. SI el archivo de configuración falta o un valor es inválido ENTONCES el sistema
    DEBERÁ usar valores por defecto seguros y registrar una advertencia.
+
+### Requisito 9 — Controles de reproducción en la pantalla táctil
+
+**Historia de usuario:** Como usuario, mientras un partido se reproduce en la TV,
+quiero controlar la reproducción desde la pantalla de 7", para detenerlo o cambiar
+de fuente sin levantarme ni tocar la TV.
+
+#### Criterios de aceptación
+
+1. CUANDO hay una reproducción activa ENTONCES la pantalla de 7" DEBERÁ mostrar,
+   como mínimo, dos botones grandes: **Detener** y **Siguiente streaming**.
+2. CUANDO el usuario pulsa **Detener** ENTONCES el sistema DEBERÁ detener la
+   instancia de reproducción (mpv) y volver a la lista de partidos.
+3. CUANDO el usuario pulsa **Siguiente streaming** ENTONCES el sistema DEBERÁ
+   saltar a la siguiente fuente de la lista ya resuelta (Requisito 7) sin
+   re-consultar el plugin.
+4. CUANDO se agotan las fuentes alternativas ENTONCES el botón **Siguiente
+   streaming** DEBERÁ indicar que no hay más fuentes (deshabilitado o aviso) y
+   permitir volver a la lista con **Detener**.
+5. (Opcional) La pantalla PODRÁ mostrar un indicador de la fuente actual respecto
+   al total disponible (p. ej. "fuente 2 de 5").
+
+### Requisito 10 — Bloqueo de actualizaciones durante reproducción (lock de estado)
+
+**Historia de usuario:** Como usuario viendo un partido, no quiero que una
+actualización automática reinicie servicios y me corte el stream.
+
+#### Criterios de aceptación
+
+1. CUANDO comienza una reproducción ENTONCES el sistema DEBERÁ registrar un estado
+   de **reproducción activa** accesible por los procesos de actualización.
+2. CUANDO termina la reproducción (Detener o fin del stream) ENTONCES el sistema
+   DEBERÁ limpiar ese estado de reproducción activa.
+3. MIENTRAS exista el estado de reproducción activa ENTONCES ningún proceso de
+   actualización (repo propio o plugin) DEBERÁ reiniciar servicios ni reconstruir
+   el plugin.
+4. SI el estado de reproducción activa queda obsoleto por un cierre inesperado de
+   la aplicación ENTONCES el sistema DEBERÁ poder detectarlo y no bloquear
+   actualizaciones de forma indefinida (p. ej. validando que el proceso de
+   reproducción siga vivo).
+
+### Requisito 11 — Soporte de fixtures/horarios vía datos de nflverse
+
+**Historia de usuario:** Como usuario, quiero que la lista de partidos NFL muestre
+nombres de equipo y horarios fiables, para identificar bien qué partido es cuál y
+a qué hora, aun cuando el plugin no traiga esos datos.
+
+**Fuente de datos:** CSV público de nflverse (`nfldata/data/games.csv`), leído
+directamente con `requests` + `csv` (sin librerías adicionales). Contiene, por
+partido: `game_id`, `season`, `week`, `gameday` (fecha), `gametime` (hora, en zona
+ET), `weekday`, `home_team`, `away_team`, `home_score`, `away_score`, entre otros.
+Verificado: `gameday`, `gametime` y equipos vienen poblados para partidos pasados
+y futuros de la temporada en curso.
+
+#### Criterios de aceptación
+
+1. CUANDO se lista NFL ENTONCES el sistema PODRÁ consultar el CSV de nflverse para
+   obtener los partidos de la **jornada en curso**, definida como la ventana
+   **martes 00:00 → lunes 23:59** (en la zona del kiosk) que contiene el día de hoy
+   (comparando `gameday`). Esta ventana define qué partidos pertenecen a la jornada
+   (Requisito 4).
+2. CUANDO un partido del plugin se empareja con un partido del CSV (por código o
+   nombre de equipo) ENTONCES el sistema DEBERÁ completar/mejorar los datos que al
+   plugin le falten: nombres de equipo y `start_time` (derivado de
+   `gameday` + `gametime`).
+3. CUANDO se usa `gametime` ENTONCES el sistema DEBERÁ interpretarlo en zona ET y
+   convertirlo a la zona horaria del kiosk antes de mostrarlo. (El formato de
+   `gametime` no incluye zona explícita; nflverse usa ET — a verificar en
+   implementación.)
+4. El sistema NO DEBERÁ depender de los marcadores (`home_score`/`away_score`) de
+   esta fuente para estado en vivo: nflverse se actualiza con retraso (no es tiempo
+   real). El estado live y la autoridad del kickoff los provee el plugin
+   (Requisito 6).
+5. El sistema DEBERÁ cachear localmente el CSV descargado y reutilizarlo durante
+   **una semana** (los horarios de nflverse cambian poco una vez fijados), evitando
+   descargarlo en cada refresco. Una actualización manual (`update-now`) PODRÁ
+   forzar la re-descarga del CSV.
+6. SI el CSV de nflverse no está disponible (red, 404) ENTONCES el sistema DEBERÁ
+   seguir funcionando con los datos del plugin (degradación suave) y registrar el
+   fallo en el log.
+7. El enriquecimiento DEBERÁ aplicarse únicamente a la lista de partidos; MIENTRAS
+   haya una reproducción activa, la vista de lista queda cubierta por los controles
+   de reproducción (Requisito 9), por lo que este requisito no afecta la pantalla
+   durante el streaming.

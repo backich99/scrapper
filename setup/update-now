@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# update-now — Invocación manual de la actualización del repo propio (R1.5).
+#
+# Es un envoltorio delgado sobre `update-repo.sh`: ejecuta el MISMO flujo
+# (fetch + aplicar + reiniciar servicios) de inmediato, sin esperar al timer
+# horario. Pensado para instalarse como enlace en el PATH (p. ej.
+# /usr/local/bin/update-now -> setup/update-now o -> setup/update-repo.sh), de
+# modo que el administrador solo teclee:
+#
+#   update-now            # aplica si hay cambios y no hay un partido en curso
+#   update-now --force    # fuerza el intento aunque no se detecten cambios
+#
+# IMPORTANTE (R1.8 / R10.3): --force NO interrumpe una reproducción activa.
+# Igual que la ejecución automática, si hay un partido en curso la actualización
+# queda PENDIENTE; para detener el partido está el botón Detener de la UI. Lo
+# único que hace --force es saltarse la salida temprana por "sin cambios".
+#
+# Todos los argumentos se pasan tal cual a update-repo.sh.
+#
+set -uo pipefail
+
+# Resolver el directorio real de este script (siguiendo enlaces simbólicos), de
+# modo que update-now encuentre update-repo.sh aunque se invoque vía symlink.
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+    DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+exec bash "$SCRIPT_DIR/update-repo.sh" "$@"

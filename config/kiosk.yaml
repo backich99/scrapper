@@ -1,0 +1,18 @@
+# Configuración del kiosk NFL bajo demanda (Requisito 8).
+#
+# Ajusta aquí los parámetros clave del kiosk sin tocar código. Si falta este
+# archivo o un valor es inválido, el sistema usa defaults seguros y registra
+# una advertencia en el log (R8.3).
+
+plugin:
+  url: "http://localhost:7000"    # servicio Node local del addon live-sport-plugin
+  resolve_timeout: 30             # segundos máx. "cargando..." antes de abortar (R6.6)
+  retry_delay: 4                  # segundos antes de reintentar /stream una vez
+
+playback:
+  max_resolution: 1080            # tope de altura; mejor stream <= este valor (R6.3)
+
+schedule:
+  csv_url: "https://github.com/nflverse/nfldata/raw/master/data/games.csv"
+  cache_ttl: 604800               # validez de la caché del CSV: 1 semana (R11.5)
+  timezone: "America/Mexico_City" # zona del kiosk para "de hoy" y conversión de ET

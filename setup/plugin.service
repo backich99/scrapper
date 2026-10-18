@@ -1,0 +1,18 @@
+[Unit]
+Description=live-sport-plugin (Nuvio/Stremio addon) para el kiosk NFL
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__/live-sport-plugin/live-sport-plugin
+Environment=PORT=7000
+Environment=ADDON_URL=http://localhost:7000
+Environment=DONATION_URL=disabled
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

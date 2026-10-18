@@ -16,9 +16,12 @@ chip de liga e indicador EN VIVO. La ventana va a pantalla completa en HDMI0.
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import logging
 import os
+import subprocess
 import threading
+import time
 
 # La configuración de la ventana debe fijarse ANTES de importar el resto de
 # Kivy para que surta efecto (Kivy lee Config al importar core.window).
@@ -37,6 +40,7 @@ from kivy.metrics import dp, sp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.image import Image
@@ -44,9 +48,24 @@ from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 
 from player import MpvPlayer
+from scraper.kiosk_config import load_kiosk_config
+from scraper.nfl_schedule import NflScheduleClient
 from scraper.ondemand import resolve_match
+from scraper import playback_lock
+from scraper.plugin_client import PluginClient
+from scraper.source_switcher import SourceSwitcher
 from scraper import deporte_libre as dl
 from .agenda import Agenda, AgendaGame
+from .gameweek import (
+    NO_MORE_SOURCES_TEXT,
+    UNAVAILABLE_TEXT,
+    UnavailableTracker,
+    adapt_plugin_event,
+    next_source_enabled,
+    order_gameweek,
+    source_label,
+)
+from . import playback
 from .logos import logo_path
 from .teams import slug_terms, team_badge
 
@@ -74,6 +93,24 @@ def _circle_text_color(rgb: tuple[float, float, float]) -> tuple[float, float, f
     r, g, b = rgb
     lum = 0.299 * r + 0.587 * g + 0.114 * b
     return (0.05, 0.05, 0.05, 1) if lum > 0.6 else (1, 1, 1, 1)
+
+
+def _play_accepts_origin(play) -> bool:
+    """¿La función ``play`` del reproductor acepta un parámetro ``origin``?
+
+    El soporte de ``Origin`` en mpv llega en la Tarea 8; esta comprobación por
+    introspección permite pasar ``origin`` en cuanto el reproductor lo soporte
+    sin acoplar el orden de las tareas (Requisito 6.4). Si la firma no se puede
+    inspeccionar, se asume que no lo acepta.
+    """
+    try:
+        params = inspect.signature(play).parameters
+    except (TypeError, ValueError):
+        return False
+    if "origin" in params:
+        return True
+    # Un **kwargs también podría aceptarlo.
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 class Badge(FloatLayout):
@@ -162,7 +199,7 @@ class LiveTag(FloatLayout):
 class MatchCard(ButtonBehavior, FloatLayout):
     """Tarjeta-botón de un partido de la agenda. Al pulsar, resuelve y reproduce."""
 
-    def __init__(self, game: AgendaGame, on_select, sport: str = "nfl", **kwargs) -> None:
+    def __init__(self, game, on_select, sport: str = "nfl", **kwargs) -> None:
         super().__init__(**kwargs)
         self.game = game
         self._on_select = on_select
@@ -170,6 +207,12 @@ class MatchCard(ButtonBehavior, FloatLayout):
         self.size_hint_y = None
         self.height = dp(150)
         self._busy = False
+        # id del evento del plugin para la resolución bajo demanda (Tarea 7).
+        # None para tarjetas del fallback (ESPN), que resuelven por términos.
+        self.event_id: str | None = getattr(game, "event_id", None)
+        # Lista rankeada ya resuelta (SourceSwitcher) para los controles
+        # Detener/Siguiente de la Tarea 9. Se rellena al reproducir (Tarea 7).
+        self._switcher: SourceSwitcher | None = None
 
         with self.canvas.before:
             self._bg_color = Color(*self._base_bg())
@@ -258,6 +301,129 @@ class MatchCard(ButtonBehavior, FloatLayout):
         self._on_select(self)
 
 
+class PlaybackOverlay(FloatLayout):
+    """Overlay táctil de controles mientras hay una reproducción activa (R9).
+
+    Flota por encima de la lista de partidos en la pantalla de 7" y ofrece dos
+    botones grandes, pensados para el toque sobre una pantalla pequeña:
+
+    - **Detener** (Requisito 9.2): detiene la reproducción y vuelve a la lista.
+    - **Siguiente streaming** (Requisitos 9.3/7.2/7.3): salta a la siguiente
+      fuente ya resuelta sin re-consultar el plugin; si se agotan, el botón se
+      deshabilita y avisa "No hay más fuentes" (Requisitos 7.4/9.4), dejando
+      **Detener** disponible para volver.
+
+    Opcionalmente muestra el indicador "fuente N de M" vía
+    ``SourceSwitcher.index()`` (Requisito 9.5).
+
+    El overlay no conoce la lógica de reproducción: delega en los callbacks
+    ``on_stop`` y ``on_next`` que le pasa ``KioskRoot``. Mantiene la ``MatchCard``
+    activa (``self.card``) para que esos callbacks actúen sobre el ``_switcher``
+    correcto (su lista rankeada ya resuelta).
+    """
+
+    def __init__(self, on_stop, on_next, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._on_stop = on_stop
+        self._on_next = on_next
+        # Tarjeta en reproducción; se fija en ``show`` y se consulta en los
+        # callbacks para operar sobre su ``_switcher``.
+        self.card: MatchCard | None = None
+
+        # Velo semitransparente que cubre la lista para dejar claro que la
+        # pantalla está en modo "reproducción" (los controles mandan).
+        with self.canvas.before:
+            self._veil_c = Color(0, 0, 0, 0.72)
+            self._veil = RoundedRectangle(pos=self.pos, size=self.size, radius=[0])
+        self.bind(pos=self._sync_veil, size=self._sync_veil)
+
+        # Columna central con el título, el indicador de fuente y los botones.
+        column = BoxLayout(
+            orientation="vertical", spacing=dp(20),
+            size_hint=(None, None), size=(dp(520), dp(360)),
+            pos_hint={"center_x": 0.5, "center_y": 0.5},
+        )
+        self.bind(
+            size=lambda _w, _s: setattr(
+                column, "pos",
+                (self.center_x - column.width / 2, self.center_y - column.height / 2),
+            )
+        )
+
+        self._title = Label(
+            text="Reproduciendo en TV", font_size=sp(22), bold=True,
+            color=TEXT_MAIN, size_hint_y=None, height=dp(40),
+            halign="center", valign="middle",
+        )
+        self._title.bind(size=lambda w, *_: setattr(w, "text_size", w.size))
+        column.add_widget(self._title)
+
+        # Indicador "fuente N de M" (Requisito 9.5). Vacío = sin fuentes.
+        self._source_label = Label(
+            text="", font_size=sp(16), color=TEXT_DIM,
+            size_hint_y=None, height=dp(28),
+            halign="center", valign="middle",
+        )
+        self._source_label.bind(size=lambda w, *_: setattr(w, "text_size", w.size))
+        column.add_widget(self._source_label)
+
+        # Botón grande "Siguiente streaming" (Requisito 9.3).
+        self._next_btn = Button(
+            text="Siguiente streaming", font_size=sp(24), bold=True,
+            size_hint_y=None, height=dp(96),
+            background_normal="", background_color=ACCENT, color=TEXT_MAIN,
+        )
+        self._next_btn.bind(on_release=lambda _b: self._on_next(self))
+        column.add_widget(self._next_btn)
+
+        # Botón grande "Detener" (Requisito 9.2).
+        self._stop_btn = Button(
+            text="Detener", font_size=sp(24), bold=True,
+            size_hint_y=None, height=dp(96),
+            background_normal="", background_color=LIVE_RED, color=TEXT_MAIN,
+        )
+        self._stop_btn.bind(on_release=lambda _b: self._on_stop(self))
+        column.add_widget(self._stop_btn)
+
+        self.add_widget(column)
+
+    def _sync_veil(self, *_a) -> None:
+        self._veil.pos = self.pos
+        self._veil.size = self.size
+
+    def show(self, card: MatchCard) -> None:
+        """Muestra el overlay para la ``card`` dada y refresca su estado (R9.1)."""
+        self.card = card
+        self.sync_state()
+
+    def sync_state(self) -> None:
+        """Actualiza indicador y botón "Siguiente" según el switcher actual.
+
+        Refleja ``SourceSwitcher.index()`` en el indicador "fuente N de M"
+        (Requisito 9.5) y habilita/deshabilita "Siguiente streaming" según
+        ``has_next()`` (Requisitos 7.4/9.4). Sin switcher (p. ej. fallback sin
+        lista) deja el indicador vacío y "Siguiente" deshabilitado.
+        """
+        switcher = getattr(self.card, "_switcher", None) if self.card else None
+        if switcher is None:
+            self._source_label.text = ""
+            self._set_next_enabled(False)
+            return
+
+        self._source_label.text = source_label(switcher.index())
+        self._set_next_enabled(next_source_enabled(switcher.has_next()))
+
+    def _set_next_enabled(self, enabled: bool) -> None:
+        """Habilita/deshabilita el botón "Siguiente" y ajusta su texto (R9.4)."""
+        self._next_btn.disabled = not enabled
+        if enabled:
+            self._next_btn.text = "Siguiente streaming"
+            self._next_btn.background_color = ACCENT
+        else:
+            self._next_btn.text = NO_MORE_SOURCES_TEXT
+            self._next_btn.background_color = CARD_BG_DISABLED
+
+
 class KioskRoot(BoxLayout):
     """Layout raíz: fondo, cabecera y grid de tarjetas de la agenda del día."""
 
@@ -265,9 +431,35 @@ class KioskRoot(BoxLayout):
         super().__init__(orientation="vertical", spacing=dp(8),
                          padding=[dp(16), dp(12)], **kwargs)
         self.player = player
+
+        # Config del kiosk + clientes del plugin y de los fixtures (R8, R11).
+        self._config = load_kiosk_config()
+        self._plugin = PluginClient(
+            base_url=self._config.plugin.url,
+            timeout=self._config.plugin.resolve_timeout,
+            timezone=self._config.schedule.timezone,
+            retry_delay=self._config.plugin.retry_delay,
+        )
+        self._schedule = NflScheduleClient(
+            csv_url=self._config.schedule.csv_url,
+            cache_ttl=self._config.schedule.cache_ttl,
+            tz=self._config.schedule.timezone,
+        )
+        # Agenda de ESPN como fallback de la lista (Requisito 5.1).
         self._agenda = Agenda(sport="nfl")
+        # Recuerda qué event_id se marcaron "no disponible" entre refrescos (R4.4).
+        self._unavailable = UnavailableTracker()
         self._cards: list[MatchCard] = []
         self._signature: tuple | None = None
+        # Overlay de controles de reproducción (Detener/Siguiente), creado una
+        # sola vez y flotado sobre todo vía Window al reproducir (R9).
+        self._overlay = PlaybackOverlay(
+            on_stop=self._on_overlay_stop, on_next=self._on_overlay_next,
+        )
+        self._overlay_visible = False
+        # Evento Clock que vigila is_playing() para detectar el fin del stream
+        # y liberar el lock (R10.2). None cuando no hay reproducción activa.
+        self._playback_watch = None
 
         with self.canvas.before:
             self._bg_c = Color(*BG_TOP)
@@ -295,10 +487,68 @@ class KioskRoot(BoxLayout):
         self._bg.size = self.size
 
     def refresh(self) -> None:
-        """Recarga la agenda del día y reconstruye las tarjetas si algo cambió."""
-        games = self._agenda.today()
-        # Firma para detectar cambios (equipos + estado) y evitar reconstruir en balde.
-        signature = tuple((g.away_abbr, g.home_abbr, g.state) for g in games)
+        """Recarga la jornada NFL y reconstruye las tarjetas si algo cambió.
+
+        La obtención de datos (plugin + fixtures + fallback) puede hacer varias
+        llamadas de red, así que se ejecuta en segundo plano para no bloquear el
+        hilo de Kivy; la reconstrucción de tarjetas vuelve al hilo de la UI vía
+        ``Clock``. El refresco periódico (R4.6) llama a este mismo método.
+        """
+        threading.Thread(target=self._refresh_worker, daemon=True).start()
+
+    def _refresh_worker(self) -> None:
+        """(Hilo) Obtiene los partidos de la jornada y programa el repintado."""
+        games, from_plugin = self._load_gameweek()
+        games = order_gameweek(games)
+        Clock.schedule_once(lambda _dt: self._rebuild_cards(games, from_plugin), 0)
+
+    def _load_gameweek(self) -> tuple[list, bool]:
+        """Obtiene los partidos de la jornada: plugin (enriquecido) o fallback.
+
+        Intenta el plugin (``is_up()`` + ``list_nfl_gameweek()``); si responde con
+        partidos, los enriquece con ``NflScheduleClient.enrich()`` y los adapta a
+        objetos tipo ``AgendaGame`` para ``MatchCard``. Si el plugin está caído o
+        no devuelve nada, cae a la agenda de ESPN existente (Requisitos 4.5/5.1) y
+        lo registra en el log (Requisito 5.4).
+
+        Devuelve ``(games, from_plugin)``: la lista de partidos y si vienen del
+        plugin (para la cabecera y el seguimiento de "no disponible").
+        """
+        try:
+            if self._plugin.is_up():
+                events = self._plugin.list_nfl_gameweek()
+                if events:
+                    self._schedule.refresh_schedule()
+                    adapted: list = []
+                    for event in events:
+                        enriched = self._schedule.enrich(event)
+                        game = adapt_plugin_event(enriched)
+                        if game is not None:
+                            adapted.append(game)
+                    if adapted:
+                        return adapted, True
+                    log.warning(
+                        "Plugin devolvió eventos pero ninguno adaptable; "
+                        "se usa el fallback de ESPN."
+                    )
+                else:
+                    log.info("Plugin sin partidos NFL; se usa el fallback de ESPN.")
+            else:
+                log.info("Plugin no disponible; se usa el fallback de ESPN.")
+        except Exception as exc:  # noqa: BLE001 - la UI no debe romperse
+            log.warning("Fallo al listar vía plugin (%s); se usa el fallback.", exc)
+
+        # Fallback: agenda del día de ESPN (Requisito 5.1).
+        return self._agenda.today(), False
+
+    def _rebuild_cards(self, games: list, from_plugin: bool) -> None:
+        """(Hilo Kivy) Reconstruye las tarjetas si la jornada cambió."""
+        # Firma para detectar cambios (equipos + estado + id) y evitar reconstruir
+        # en balde. Incluye el event_id para distinguir fuentes/partidos.
+        signature = tuple(
+            (getattr(g, "event_id", None), g.away_abbr, g.home_abbr, g.state)
+            for g in games
+        )
         if signature == self._signature:
             return
         self._signature = signature
@@ -308,12 +558,16 @@ class KioskRoot(BoxLayout):
 
         today_str = dt.datetime.now().strftime("%d/%m")
         if not games:
-            self.header.text = f"Hoy {today_str}  ·  sin partidos NFL"
+            self.header.text = f"Jornada NFL {today_str}  ·  sin partidos"
             return
 
-        self.header.text = f"Partidos de hoy {today_str}  ·  {len(games)}"
+        origen = "plugin" if from_plugin else "ESPN"
+        self.header.text = f"Jornada NFL {today_str}  ·  {len(games)} ({origen})"
         for g in games:
             card = MatchCard(g, on_select=self._on_select, sport="nfl")
+            # Restaurar el estado "no disponible" de tarjetas ya marcadas (R4.4).
+            if self._unavailable.is_unavailable(card.event_id):
+                card.set_status(UNAVAILABLE_TEXT, WARN)
             self._cards.append(card)
             self.grid.add_widget(card)
 
@@ -341,26 +595,283 @@ class KioskRoot(BoxLayout):
         ).start()
 
     def _resolve_and_play(self, card: MatchCard, a_terms, b_terms) -> None:
-        """(Hilo) Resuelve el .m3u8 y programa la reproducción en el hilo de Kivy."""
-        result = None
+        """(Hilo) Resuelve el stream del partido y programa su reproducción.
+
+        Flujo (diseño §5, Flujo B; Requisitos 6.1, 6.2, 5.2):
+
+        1. Resuelve las fuentes con ``PluginClient.resolve_streams`` (reintento
+           interno) y, si no hay, cae al scraper Python existente
+           (``ondemand.resolve_match``) envuelto como ``Stream`` (R5.2/R5.4).
+        2. Construye un ``SourceSwitcher`` (que internamente usa
+           ``ResolutionPolicy.pick_best`` para la selección inicial dentro del
+           tope ``playback.max_resolution``) y lo guarda en la tarjeta para que
+           los controles Detener/Siguiente de la Tarea 9 lo reutilicen.
+        3. Si hay un stream reproducible, lo lanza en mpv (con ``referer`` y, si
+           el reproductor ya lo soporta, ``origin``) y marca "Reproduciendo".
+        4. Timeout de 30 s (R6.6): si la resolución agota el presupuesto sin un
+           stream reproducible, marca la tarjeta "no disponible" y vuelve a la
+           lista.
+
+        Toda la red ocurre en este hilo de fondo; la reproducción y el pintado
+        vuelven al hilo de Kivy vía ``Clock.schedule_once``.
+        """
+        timeout = self._config.plugin.resolve_timeout
+        max_height = self._config.playback.max_resolution
+
+        deadline = time.monotonic() + timeout
+        switcher: SourceSwitcher | None = None
+        best = None
         try:
-            result = resolve_match(a_terms, b_terms)
+            streams = playback.resolve_streams(
+                self._plugin, card.event_id, resolve_match,
+                a_terms, b_terms, timeout,
+            )
+            # Presupuesto global de 30 s (R6.6): si la resolución tardó más que el
+            # timeout, tratamos el partido como no disponible aunque haya traído
+            # algo tarde, para no dejar la tarjeta "cargando" indefinidamente.
+            if time.monotonic() <= deadline and streams:
+                switcher = SourceSwitcher(streams, max_height=max_height)
+                best = switcher.current()
         except Exception as exc:  # noqa: BLE001 - la UI no debe romperse
             log.warning("Resolución on-demand falló: %s", exc)
 
         def finish(_dt) -> None:
             card._busy = False
-            if result is None:
-                card.set_status("Stream no disponible aún", WARN)
+            # Guardar el switcher en la tarjeta para los controles de la Tarea 9
+            # ("Siguiente"/"Detener"), aunque sea None.
+            card._switcher = switcher
+
+            if best is None:
+                # Sin stream reproducible (vacío, fallback fallido o timeout):
+                # marcar "no disponible" y volver a la lista (R6.6).
+                self._unavailable.mark(card.event_id)
+                card.set_status(UNAVAILABLE_TEXT, WARN)
                 return
+
             card.set_status("Reproduciendo en TV", ACCENT)
             try:
-                self.player.play(result.url, referrer=result.referrer)
+                self._play_stream(best)
             except RuntimeError as exc:
                 log.error("No se pudo reproducir: %s", exc)
                 card.set_status("Error al reproducir", LIVE_RED)
+                return
+
+            # Registrar el lock de reproducción con el PID de mpv (R10.1).
+            self._acquire_playback_lock()
+
+            # Reproducción iniciada con éxito: mostrar el overlay de controles
+            # Detener/Siguiente en la pantalla de 7" (Requisito 9.1).
+            self._show_overlay(card)
+            # Vigilar is_playing(): si mpv termina solo (fin del stream), liberar
+            # el lock y volver a la lista como si fuese un Detener (R10.2).
+            self._start_playback_watch(card)
 
         Clock.schedule_once(finish, 0)
+
+    def _play_stream(self, stream) -> None:
+        """Reproduce un ``Stream`` en mpv pasando ``referer`` y, si cabe, ``origin``.
+
+        El soporte de ``Origin`` en el reproductor llega en la Tarea 8. Para no
+        acoplar el orden de las tareas, se detecta por introspección si
+        ``MpvPlayer.play`` ya acepta un parámetro ``origin`` y, sólo entonces y
+        si el stream lo trae, se pasa (Requisito 6.4). Mientras no exista, se
+        reproduce con el ``referer`` ya soportado, sin romper nada.
+        """
+        kwargs = {"referrer": stream.referer}
+        if stream.origin and _play_accepts_origin(self.player.play):
+            kwargs["origin"] = stream.origin
+        self.player.play(stream.url, **kwargs)
+
+    # --- Overlay de controles de reproducción (Tarea 9, Requisito 9) -------- #
+
+    def _show_overlay(self, card: MatchCard) -> None:
+        """Flota el overlay de controles sobre la lista para ``card`` (R9.1)."""
+        self._overlay.show(card)
+        if not self._overlay_visible:
+            # Ocupar toda la ventana y flotar encima de la lista.
+            self._overlay.size = Window.size
+            self._overlay.pos = (0, 0)
+            Window.bind(size=self._sync_overlay_size)
+            Window.add_widget(self._overlay)
+            self._overlay_visible = True
+
+    def _sync_overlay_size(self, _window, size) -> None:
+        """Mantiene el overlay a tamaño completo si la ventana cambia."""
+        self._overlay.size = size
+        self._overlay.pos = (0, 0)
+
+    def _hide_overlay(self) -> None:
+        """Oculta el overlay y vuelve a la vista de lista (R9.2)."""
+        if self._overlay_visible:
+            Window.unbind(size=self._sync_overlay_size)
+            Window.remove_widget(self._overlay)
+            self._overlay_visible = False
+
+    # --- Lock de reproducción (Tarea 10, Requisito 10) --------------------- #
+
+    def _acquire_playback_lock(self) -> None:
+        """Registra el lock con el PID de mpv tras arrancar la reproducción (R10.1).
+
+        Lee el PID del proceso mpv desde ``self.player`` de forma defensiva (vía
+        ``getattr`` sobre ``_proc``) para no romper si se corre headless o si el
+        reproductor aún no lanzó el proceso. Cualquier fallo de E/S al escribir
+        el lock se registra sin interrumpir la reproducción.
+        """
+        proc = getattr(self.player, "_proc", None)
+        pid = getattr(proc, "pid", None)
+        if pid is None:
+            log.info("Sin PID de mpv; no se registra el lock de reproducción.")
+            return
+        try:
+            playback_lock.acquire(pid)
+        except OSError as exc:
+            log.warning("No se pudo registrar el lock de reproducción: %s", exc)
+
+    def _release_playback_lock(self) -> None:
+        """Limpia el lock de reproducción al detener o terminar el stream (R10.2)."""
+        try:
+            playback_lock.release()
+        except OSError as exc:  # noqa: BLE001 - no romper el "Detener"
+            log.warning("Fallo al liberar el lock de reproducción: %s", exc)
+
+    def _trigger_pending_update(self) -> None:
+        """Aplica una actualización pospuesta al liberar el lock (R1.9/R1.10).
+
+        ``setup/update-repo.sh`` deja la marca ``PENDING`` cuando una
+        actualización coincide con una reproducción en curso. Al soltar el lock
+        (Detener o fin de stream) ya no hay partido, así que disparamos
+        ``scrapper-update.service`` de inmediato en vez de esperar al siguiente
+        tick del timer. La UI corre como el usuario kiosk, de modo que usamos
+        ``sudo -n`` (sudo sin contraseña, ver ``setup/03-sudo-nopasswd.sh``).
+
+        Se lanza como *fire-and-forget* con ``Popen`` para no bloquear el hilo de
+        Kivy, y se envuelve en un ``try`` amplio: si ``systemctl``/``sudo`` no
+        están disponibles (headless/dev) la UI no debe romperse. NO se borra la
+        marca aquí: ``update-repo.sh`` la limpia al aplicar (o la re-marca si
+        sigue ocupado), lo que cubre también el reintento del timer (R1.10).
+        """
+        try:
+            if not playback_lock.pending_exists():
+                return
+        except Exception as exc:  # noqa: BLE001 - la UI no debe romperse
+            log.warning("No se pudo comprobar la marca PENDING: %s", exc)
+            return
+        log.info(
+            "Marca PENDING detectada al liberar el lock: disparando "
+            "scrapper-update.service."
+        )
+        try:
+            subprocess.Popen(
+                ["sudo", "-n", "systemctl", "start", "scrapper-update.service"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, ValueError) as exc:  # systemctl/sudo ausente, etc.
+            log.warning(
+                "No se pudo disparar scrapper-update.service: %s "
+                "(se aplicará en el siguiente tick del timer).",
+                exc,
+            )
+
+    def _start_playback_watch(self, card: MatchCard) -> None:
+        """Vigila ``player.is_playing()`` para detectar el fin del stream (R10.2).
+
+        mpv puede terminar por su cuenta (fin del partido, caída del CDN). Se
+        sondea con un intervalo de Clock y, al detectar que ya no reproduce, se
+        actúa como un Detener: liberar el lock, ocultar el overlay y restaurar la
+        tarjeta. Reemplaza cualquier vigilancia previa.
+        """
+        self._stop_playback_watch()
+        self._playback_watch = Clock.schedule_interval(
+            lambda _dt: self._check_playback_ended(card), 1.0
+        )
+
+    def _stop_playback_watch(self) -> None:
+        """Cancela la vigilancia de ``is_playing()`` si está activa."""
+        if self._playback_watch is not None:
+            self._playback_watch.cancel()
+            self._playback_watch = None
+
+    def _check_playback_ended(self, card: MatchCard) -> None:
+        """(Clock) Si mpv ya no reproduce, trata el stream como terminado (R10.2)."""
+        try:
+            still_playing = self.player.is_playing()
+        except Exception as exc:  # noqa: BLE001 - la UI no debe romperse
+            log.warning("Fallo al consultar is_playing(): %s", exc)
+            return
+        if still_playing:
+            return
+
+        # Fin del stream: dejar de vigilar, liberar el lock y volver a la lista.
+        self._stop_playback_watch()
+        self._release_playback_lock()
+        # Lock ya libre: si quedó una actualización pendiente, aplicarla ya
+        # (sin esperar al siguiente tick del timer) (R1.9/R1.10).
+        self._trigger_pending_update()
+        if card is not None:
+            card.set_status(card.game.status_text(), card._status_color())
+        self._hide_overlay()
+
+    def _on_overlay_stop(self, overlay: PlaybackOverlay) -> None:
+        """Botón Detener: parar mpv, ocultar overlay y volver a la lista (R9.2)."""
+        # Dejar de vigilar is_playing() antes de parar, para que el watcher no
+        # dispare un segundo "fin de stream" sobre un Detener manual (R10.2).
+        self._stop_playback_watch()
+        self.player.stop()
+        # Liberar el lock de reproducción (/run/scrapper/playback.lock) y, si
+        # quedó una actualización pendiente, dispararla de inmediato ahora que
+        # ya no hay partido en curso (R1.9/R1.10/R10.2).
+        self._release_playback_lock()
+        self._trigger_pending_update()
+
+        card = overlay.card
+        if card is not None:
+            card.set_status(card.game.status_text(), card._status_color())
+        self._hide_overlay()
+
+    def _on_overlay_next(self, overlay: PlaybackOverlay) -> None:
+        """Botón Siguiente: saltar a la próxima fuente ya resuelta (R9.3/R7.2).
+
+        Detiene la reproducción actual antes de iniciar la nueva (R7.3). Si se
+        agotan las fuentes, no cambia nada y el overlay refleja que no hay más
+        (R7.4/R9.4), dejando Detener disponible.
+        """
+        card = overlay.card
+        switcher = getattr(card, "_switcher", None) if card else None
+        if switcher is None:
+            overlay.sync_state()
+            return
+
+        nxt = switcher.next()
+        if nxt is None:
+            # Fuentes agotadas: avisar/deshabilitar y mantener Detener (R9.4).
+            overlay.sync_state()
+            return
+
+        # Pausar la vigilancia de is_playing() durante el cambio: entre stop() y
+        # play() el reproductor queda momentáneamente parado y no debe
+        # confundirse con un fin de stream (R10.2).
+        self._stop_playback_watch()
+        # Detener la instancia actual antes de iniciar la nueva (R7.3).
+        self.player.stop()
+        try:
+            self._play_stream(nxt)
+        except RuntimeError as exc:
+            log.error("No se pudo reproducir la siguiente fuente: %s", exc)
+            if card is not None:
+                card.set_status("Error al reproducir", LIVE_RED)
+            # La siguiente fuente no arrancó: liberar el lock y volver a la lista.
+            self._release_playback_lock()
+            self._hide_overlay()
+            overlay.sync_state()
+            return
+        # Nueva instancia de mpv: actualizar el lock con su PID y reanudar la
+        # vigilancia del fin de stream (R10.1/R10.2).
+        self._acquire_playback_lock()
+        self._start_playback_watch(card)
+        # Actualizar el indicador "fuente N de M" y el estado del botón (R9.5).
+        overlay.sync_state()
 
 
 class ChannelCard(ButtonBehavior, FloatLayout):

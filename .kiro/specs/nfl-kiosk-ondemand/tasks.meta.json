@@ -1,0 +1,390 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1. Configuración centralizada del kiosk": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271843176
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271852024
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792276330900
+      }
+    ],
+    "2.1 Esqueleto y healthcheck": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271843489
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792276335897
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792276423709
+      }
+    ],
+    "2.2 Listado de la jornada NFL": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271843712
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792276428792
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792276997728
+      }
+    ],
+    "2.3 Resolución de streams de un partido": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271843904
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277000077
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277386827
+      }
+    ],
+    "3. ResolutionPolicy — selección del mejor stream ≤ tope": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271844035
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277392921
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277463081
+      }
+    ],
+    "4. SourceSwitcher — lista rankeada y salto de fuente": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271844168
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277466924
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277568764
+      }
+    ],
+    "5.1 Descarga y caché semanal del CSV": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271844302
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277571788
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277686515
+      }
+    ],
+    "5.2 Jornada en curso y modelo ScheduleGame": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271844451
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277689013
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277860394
+      }
+    ],
+    "5.3 Enriquecimiento de eventos": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271844556
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277862829
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792278111126
+      }
+    ],
+    "6. Integración en la UI — listado de la jornada": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271844707
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792278120639
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281043981
+      }
+    ],
+    "7. Integración en la UI — resolución y reproducción bajo demanda": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271844914
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281048876
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281239339
+      }
+    ],
+    "8. Soporte de Origin en el reproductor mpv": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271845080
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281242642
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281342771
+      }
+    ],
+    "9. Overlay de controles de reproducción (pantalla 7\")": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271845210
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281346755
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281507826
+      }
+    ],
+    "10.1 Gestión del lock desde la app": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271845364
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281510812
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281657319
+      }
+    ],
+    "10.2 Lectura y validación de lock obsoleto": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271845522
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281660092
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281804592
+      }
+    ],
+    "11. Servicio Node del plugin (systemd)": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271845672
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281808168
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288096749
+      }
+    ],
+    "12.1 Script de actualización": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271845807
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288100974
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288496927
+      }
+    ],
+    "12.2 Unidades systemd del timer": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271845972
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288499721
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288690474
+      }
+    ],
+    "12.3 Aplicar actualización pendiente al terminar la reproducción": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271846126
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288693251
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288806090
+      }
+    ],
+    "13. Update controlado del plugin desde upstream": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271846250
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288809252
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288944731
+      }
+    ],
+    "14. Verificación end-to-end": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792271846390
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288948791
+      },
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792289234785
+      }
+    ],
+    "2. PluginClient — cliente del addon (protocolo Stremio)": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792277386861
+      }
+    ],
+    "5. NflScheduleClient — fixtures de nflverse (CSV)": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792278111160
+      }
+    ],
+    "10. Lock de reproducción en /run/": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792281804637
+      }
+    ],
+    "12. Auto-update del repo propio (timer + script + aplicar pendiente)": [
+      {
+        "executionId": "54a6ede7-1da0-43b5-b023-410cc1116625",
+        "chatSessionId": "sess_88d91776-4c23-4d61-bdf9-cd95b5585d32",
+        "timestamp": 1792288806124
+      }
+    ]
+  }
+}

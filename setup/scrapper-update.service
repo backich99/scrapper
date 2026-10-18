@@ -1,0 +1,18 @@
+[Unit]
+Description=Auto-update del repositorio propio del kiosk (fetch + aplicar + reiniciar)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Sin User=: corre como root. update-repo.sh reinicia kiosk.service/plugin.service
+# tras aplicar cambios (R1.4), lo que requiere privilegios de systemctl. El script
+# ya se encarga de ejecutar git como el dueño del repo para no dejar objetos de
+# root en el checkout.
+ExecStart=/usr/bin/env bash __PROJECT_DIR__/setup/update-repo.sh
+StandardOutput=journal
+StandardError=journal
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
