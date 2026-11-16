@@ -29,7 +29,7 @@ export SCRAPPER_UI_WIDTH=1920
 export SCRAPPER_UI_HEIGHT=1080
 # Tablero de CANALES de Deporte-Libre (Opción A). Para volver a la agenda
 # ESPN/StreamEast, cambiar a "agenda" o quitar esta línea.
-export SCRAPPER_UI_MODE=canales
+export SCRAPPER_UI_MODE=agenda
 # Dirigir el vídeo (mpv) a la TV por nombre de output wlroots (más fiable que el índice).
 export SCRAPPER_MPV_OUTPUT=HDMI-A-2
 cd __PROJECT__ && __VENV__/bin/python -m ui.app >> /tmp/scrapper-ui.log 2>&1 &
