@@ -48,12 +48,22 @@ class ScheduleConfig:
 
 
 @dataclass
+class RemoteConfig:
+    """Parámetros del control remoto web (servidor HTTP del kiosk)."""
+
+    enabled: bool = True        # False desactiva el control remoto web
+    bind: str = "0.0.0.0"       # dirección de escucha ("127.0.0.1" = solo local)
+    port: int = 8080            # puerto TCP (1-65535)
+
+
+@dataclass
 class KioskConfig:
     """Configuración completa del kiosk."""
 
     plugin: PluginConfig = field(default_factory=PluginConfig)
     playback: PlaybackConfig = field(default_factory=PlaybackConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
+    remote: RemoteConfig = field(default_factory=RemoteConfig)
 
 
 def _as_str(section: dict[str, Any], key: str, default: str) -> str:
@@ -77,6 +87,34 @@ def _as_positive_int(section: dict[str, Any], key: str, default: int) -> int:
     value = section[key]
     # bool es subclase de int; lo rechazamos explícitamente para no aceptar True/False.
     if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    log.warning(
+        "kiosk.yaml: valor inválido para %r (%r); se usa el default %r.",
+        key, value, default,
+    )
+    return default
+
+
+def _as_bool(section: dict[str, Any], key: str, default: bool) -> bool:
+    """Lee un booleano; si falta o no es bool, devuelve el default y avisa."""
+    if key not in section:
+        return default
+    value = section[key]
+    if isinstance(value, bool):
+        return value
+    log.warning(
+        "kiosk.yaml: valor inválido para %r (%r); se usa el default %r.",
+        key, value, default,
+    )
+    return default
+
+
+def _as_port(section: dict[str, Any], key: str, default: int) -> int:
+    """Lee un puerto TCP (entero 1-65535); si es inválido, devuelve el default y avisa."""
+    if key not in section:
+        return default
+    value = section[key]
+    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 65535:
         return value
     log.warning(
         "kiosk.yaml: valor inválido para %r (%r); se usa el default %r.",
@@ -134,6 +172,7 @@ def load_kiosk_config(path: str | Path | None = None) -> KioskConfig:
     plugin_raw = _as_section(raw, "plugin")
     playback_raw = _as_section(raw, "playback")
     schedule_raw = _as_section(raw, "schedule")
+    remote_raw = _as_section(raw, "remote")
 
     plugin = PluginConfig(
         url=_as_str(plugin_raw, "url", PluginConfig.url),
@@ -157,4 +196,11 @@ def load_kiosk_config(path: str | Path | None = None) -> KioskConfig:
         timezone=_as_str(schedule_raw, "timezone", ScheduleConfig.timezone),
     )
 
-    return KioskConfig(plugin=plugin, playback=playback, schedule=schedule)
+    remote = RemoteConfig(
+        enabled=_as_bool(remote_raw, "enabled", RemoteConfig.enabled),
+        bind=_as_str(remote_raw, "bind", RemoteConfig.bind),
+        port=_as_port(remote_raw, "port", RemoteConfig.port),
+    )
+    return KioskConfig(
+        plugin=plugin, playback=playback, schedule=schedule, remote=remote
+    )

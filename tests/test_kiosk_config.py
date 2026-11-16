@@ -15,6 +15,7 @@ import os
 import sys
 import tempfile
 import textwrap
+import unittest
 
 # Permitir ejecutar como script suelto (sin PYTHONPATH) además de bajo pytest.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -125,6 +126,72 @@ def test_non_mapping_root_uses_defaults() -> None:
     assert cfg.schedule.cache_ttl == 604800
 
 
+def test_remote_defaults_without_section() -> None:
+    """Sin sección ``remote`` se usan los defaults del control remoto."""
+    path = _write("plugin:\n  retry_delay: 2\n")
+    try:
+        cfg = load_kiosk_config(path)
+    finally:
+        os.remove(path)
+    assert cfg.remote.enabled is True
+    assert cfg.remote.bind == "0.0.0.0"
+    assert cfg.remote.port == 8080
+
+
+def test_remote_valid_values() -> None:
+    """Valores válidos de ``remote`` reemplazan a los defaults."""
+    path = _write(
+        """
+        remote:
+          enabled: false
+          bind: "127.0.0.1"
+          port: 9090
+        """
+    )
+    try:
+        cfg = load_kiosk_config(path)
+    finally:
+        os.remove(path)
+    assert cfg.remote.enabled is False
+    assert cfg.remote.bind == "127.0.0.1"
+    assert cfg.remote.port == 9090
+
+
+def test_remote_invalid_values_fall_back() -> None:
+    """Puerto fuera de rango/bool, enabled no-bool y bind vacío caen al default."""
+    for port in ("0", "70000", "true"):
+        path = _write(f"remote:\n  port: {port}\n")
+        try:
+            cfg = load_kiosk_config(path)
+        finally:
+            os.remove(path)
+        assert cfg.remote.port == 8080, (port, cfg.remote.port)
+    path = _write('remote:\n  enabled: "si"\n  bind: ""\n')
+    try:
+        cfg = load_kiosk_config(path)
+    finally:
+        os.remove(path)
+    assert cfg.remote.enabled is True
+    assert cfg.remote.bind == "0.0.0.0"
+
+
+class KioskConfigTests(unittest.TestCase):
+    """Adaptador para que `unittest discover` recoja las funciones de arriba."""
+
+
+def _make_case(fn):
+    def case(self) -> None:
+        fn()
+
+    case.__doc__ = fn.__doc__
+    return case
+
+
+for _name, _fn in list(globals().items()):
+    if _name.startswith("test_") and callable(_fn):
+        setattr(KioskConfigTests, _name, _make_case(_fn))
+
+
 if __name__ == "__main__":
     test_real_config_loads_expected_defaults()
     test_missing_file_uses_safe_defaults()
@@ -132,4 +199,7 @@ if __name__ == "__main__":
     test_invalid_values_fall_back_to_defaults()
     test_empty_and_malformed_files_use_defaults()
     test_non_mapping_root_uses_defaults()
-    print("OK: 6 comprobaciones pasaron")
+    test_remote_defaults_without_section()
+    test_remote_valid_values()
+    test_remote_invalid_values_fall_back()
+    print("OK: 9 comprobaciones pasaron")

@@ -16,3 +16,10 @@ schedule:
   csv_url: "https://github.com/nflverse/nfldata/raw/master/data/games.csv"
   cache_ttl: 604800               # validez de la caché del CSV: 1 semana (R11.5)
   timezone: "America/Mexico_City" # zona del kiosk para "de hoy" y conversión de ET
+
+# Control remoto web: página para elegir/detener partidos desde el móvil
+# (http://<ip-de-la-pi>:<port>). Sin autenticación: solo para red local.
+remote:
+  enabled: true                   # false desactiva el control remoto web
+  bind: "0.0.0.0"                 # dirección de escucha ("127.0.0.1" = solo local)
+  port: 8080                      # puerto TCP (1-65535)

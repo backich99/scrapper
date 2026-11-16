@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#121726">
+<title>Control remoto</title>
+<style>
+  :root { --bg:#121726; --card:#212940; --card-off:#1c2130; --text:#f0f5ff; --dim:#a8b5d1;
+          --accent:#4f9ef2; --live:#e63d47; --warn:#f2bf4d; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:16px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #banner { position:sticky; top:0; z-index:2; background:#0d111d; padding:12px 16px;
+            border-bottom:1px solid #2a3350; }
+  #state { font-size:18px; font-weight:600; }
+  #detail { color:var(--dim); font-size:14px; min-height:18px; margin-top:2px; }
+  #stop { display:none; width:100%; min-height:56px; margin-top:10px; border:0; border-radius:12px;
+          background:var(--live); color:#fff; font-size:20px; font-weight:700; }
+  #stop:active { filter:brightness(.85); }
+  #offline { display:none; background:var(--warn); color:#222; padding:8px 16px; font-weight:600; }
+  ul { list-style:none; margin:0; padding:12px; display:grid; gap:10px; }
+  .match { width:100%; min-height:72px; padding:12px 16px; border:0; border-radius:14px; text-align:left;
+           background:var(--card); color:var(--text); font:inherit; display:block; }
+  .match:active { filter:brightness(1.25); }
+  .match.off { background:var(--card-off); opacity:.6; }
+  .title { font-size:18px; font-weight:600; }
+  .meta { color:var(--dim); font-size:14px; margin-top:4px; }
+  .live { color:var(--live); font-weight:700; margin-right:6px; }
+  #empty { text-align:center; color:var(--dim); padding:32px 16px; }
+  #toast { position:fixed; left:12px; right:12px; bottom:16px; background:#000c; color:#fff; padding:12px 16px;
+           border-radius:12px; display:none; z-index:3; }
+</style>
+</head>
+<body>
+<div id="offline">Sin conexión con la Raspberry</div>
+<div id="banner">
+  <div id="state">Cargando…</div>
+  <div id="detail"></div>
+  <button id="stop" type="button">Detener</button>
+</div>
+<div id="empty">Cargando partidos…</div>
+<ul id="list"></ul>
+<div id="toast" role="status"></div>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var lastState = null, toastTimer = null, lastMatches = [];
+
+  function toast(msg) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.style.display = "none"; }, 4000);
+  }
+
+  function api(path, body) {
+    var opts = body === undefined ? {} : {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    };
+    return fetch(path, opts).then(function (r) {
+      return r.json().then(function (j) { j.httpStatus = r.status; return j; });
+    });
+  }
+
+  function setOnline(ok) { $("offline").style.display = ok ? "none" : "block"; }
+
+  function renderStatus(s) {
+    var state = s.state, title = s.match ? s.match.title : "";
+    if (state === "playing") {
+      $("state").textContent = "Reproduciendo: " + title;
+      $("detail").textContent = s.source_label || "";
+    } else if (state === "resolving") {
+      $("state").textContent = "Buscando stream…";
+      $("detail").textContent = s.message || "";
+    } else {
+      $("state").textContent = "Nada en reproducción";
+      $("detail").textContent = s.message || "";
+    }
+    $("stop").style.display = state === "idle" ? "none" : "block";
+    if (lastState !== null && lastState !== state) { loadMatches(); }
+    lastState = state;
+  }
+
+  function renderMatches(d) {
+    var list = $("list");
+    lastMatches = d.matches || [];
+    list.textContent = "";
+    $("empty").style.display = lastMatches.length ? "none" : "block";
+    $("empty").textContent = d.loaded ? "No hay partidos." : "Cargando partidos…";
+    lastMatches.forEach(function (m) {
+      var li = document.createElement("li");
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "match" + (!m.playable || m.unavailable ? " off" : "");
+      var t = document.createElement("div");
+      t.className = "title";
+      t.textContent = m.title;
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      if (m.state === "in") {
+        var tag = document.createElement("span");
+        tag.className = "live";
+        tag.textContent = "EN VIVO";
+        meta.appendChild(tag);
+      }
+      meta.appendChild(document.createTextNode(m.unavailable ? "No disponible" : m.status_text));
+      b.appendChild(t);
+      b.appendChild(meta);
+      b.addEventListener("click", function () { play(m.id); });
+      li.appendChild(b);
+      list.appendChild(li);
+    });
+  }
+
+  function play(id) {
+    api("/api/play", { id: id }).then(function (r) {
+      if (!r.ok) { toast(r.message || "No se pudo reproducir."); }
+      loadStatus();
+    }).catch(function () { setOnline(false); });
+  }
+
+  function stop() {
+    api("/api/stop", {}).then(function (r) {
+      if (!r.ok) { toast(r.message || "No se pudo detener."); }
+      loadStatus();
+    }).catch(function () { setOnline(false); });
+  }
+
+  function loadStatus() {
+    return api("/api/status").then(function (s) { setOnline(true); renderStatus(s); })
+      .catch(function () { setOnline(false); });
+  }
+
+  function loadMatches() {
+    return api("/api/matches").then(function (d) { setOnline(true); renderMatches(d); })
+      .catch(function () { setOnline(false); });
+  }
+
+  $("stop").addEventListener("click", stop);
+
+  setInterval(function () { if (!document.hidden) { loadStatus(); } }, 2000);
+  setInterval(function () { if (!document.hidden) { loadMatches(); } }, 15000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) { loadStatus(); loadMatches(); }
+  });
+  loadStatus();
+  loadMatches();
+})();
+</script>
+</body>
+</html>

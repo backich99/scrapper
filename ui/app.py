@@ -22,6 +22,8 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 # La configuración de la ventana debe fijarse ANTES de importar el resto de
 # Kivy para que surta efecto (Kivy lee Config al importar core.window).
@@ -67,6 +69,7 @@ from .gameweek import (
 )
 from . import playback
 from .logos import logo_path
+from .remote import RemoteServer, match_id, match_to_dict
 from .teams import slug_terms, team_badge
 
 log = logging.getLogger(__name__)
@@ -213,6 +216,8 @@ class MatchCard(ButtonBehavior, FloatLayout):
         # Lista rankeada ya resuelta (SourceSwitcher) para los controles
         # Detener/Siguiente de la Tarea 9. Se rellena al reproducir (Tarea 7).
         self._switcher: SourceSwitcher | None = None
+        # Último texto de estado mostrado en la tarjeta (lo lee el control remoto).
+        self.status_text: str = game.status_text()
 
         with self.canvas.before:
             self._bg_color = Color(*self._base_bg())
@@ -290,6 +295,7 @@ class MatchCard(ButtonBehavior, FloatLayout):
         return TEXT_DIM
 
     def set_status(self, text: str, color=ACCENT) -> None:
+        self.status_text = text
         self._status_label.text = text
         self._status_label.color = color
 
@@ -451,6 +457,8 @@ class KioskRoot(BoxLayout):
         self._unavailable = UnavailableTracker()
         self._cards: list[MatchCard] = []
         self._signature: tuple | None = None
+        # True si la lista actual viene del plugin (False = ESPN); lo expone el remoto.
+        self._from_plugin = False
         # Overlay de controles de reproducción (Detener/Siguiente), creado una
         # sola vez y flotado sobre todo vía Window al reproducir (R9).
         self._overlay = PlaybackOverlay(
@@ -552,6 +560,7 @@ class KioskRoot(BoxLayout):
         if signature == self._signature:
             return
         self._signature = signature
+        self._from_plugin = from_plugin
 
         self.grid.clear_widgets()
         self._cards = []
@@ -570,6 +579,107 @@ class KioskRoot(BoxLayout):
                 card.set_status(UNAVAILABLE_TEXT, WARN)
             self._cards.append(card)
             self.grid.add_widget(card)
+
+    # --- Control remoto web (ui/remote.py) --------------------------------- #
+
+    def _run_on_ui(self, fn, timeout: float = 5):
+        """(Hilo HTTP) Ejecuta ``fn`` en el hilo de Kivy y devuelve su resultado.
+
+        Relanza la excepción de ``fn``; lanza ``TimeoutError`` si la UI no
+        responde en ``timeout`` segundos.
+        """
+        done = threading.Event()
+        box: dict = {}
+
+        def run(_dt) -> None:
+            try:
+                box["result"] = fn()
+            except Exception as exc:  # noqa: BLE001 - se relanza en el hilo HTTP
+                box["error"] = exc
+            finally:
+                done.set()
+
+        Clock.schedule_once(run, 0)
+        if not done.wait(timeout):
+            raise TimeoutError("la UI no respondió")
+        if "error" in box:
+            raise box["error"]
+        return box["result"]
+
+    def _remote_state(self) -> tuple[str, MatchCard | None]:
+        """(Hilo Kivy) Estado de reproducción: ``idle`` | ``resolving`` | ``playing``."""
+        for card in self._cards:
+            if card._busy:
+                return "resolving", card
+        if self._overlay_visible and self._overlay.card is not None:
+            return "playing", self._overlay.card
+        return "idle", None
+
+    def _remote_error(self, code: int, error: str, message: str) -> tuple[int, dict]:
+        return code, {"ok": False, "error": error, "message": message}
+
+    def remote_list_matches(self) -> dict:
+        """(Hilo Kivy) Lista de partidos actual para la API remota."""
+        return {
+            "loaded": self._signature is not None,
+            "source": (
+                None if self._signature is None
+                else ("plugin" if self._from_plugin else "espn")
+            ),
+            "matches": [
+                match_to_dict(c.game, self._unavailable.is_unavailable(c.event_id))
+                for c in self._cards
+            ],
+        }
+
+    def remote_status(self) -> dict:
+        """(Hilo Kivy) Estado de reproducción para la API remota."""
+        state, card = self._remote_state()
+        if card is None:
+            return {"state": state, "match": None, "message": None, "source_label": None}
+        label = None
+        if state == "playing" and card._switcher is not None:
+            label = source_label(card._switcher.index())
+        return {
+            "state": state,
+            "match": match_to_dict(card.game, self._unavailable.is_unavailable(card.event_id)),
+            "message": card.status_text,
+            "source_label": label,
+        }
+
+    def remote_play(self, mid: str) -> tuple[int, dict]:
+        """(Hilo Kivy) Elige un partido de la lista actual, igual que un toque local."""
+        card = next((c for c in self._cards if match_id(c.game) == mid), None)
+        if card is None:
+            return self._remote_error(404, "unknown_match", "Ese partido ya no está en la lista.")
+        if self._remote_state()[0] != "idle":
+            return self._remote_error(
+                409, "busy", "Ya hay un partido en curso; detenlo primero."
+            )
+        game = card.game
+        if not game.is_playable():
+            if game.is_final:
+                text = "Partido finalizado"
+            else:
+                start_local = game.start.astimezone().strftime("%H:%M") if game.start else "?"
+                text = f"Disponible ~{start_local}"
+            return self._remote_error(409, "not_playable", text)
+        self._on_select(card)
+        return 202, {
+            "ok": True, "state": "resolving",
+            "match": match_to_dict(game, self._unavailable.is_unavailable(card.event_id)),
+        }
+
+    def remote_stop(self) -> tuple[int, dict]:
+        """(Hilo Kivy) Detiene la reproducción (idempotente)."""
+        state, _card = self._remote_state()
+        if state == "resolving":
+            return self._remote_error(
+                409, "busy", "Se está buscando el stream; espera un momento."
+            )
+        if state == "playing":
+            self._on_overlay_stop(self._overlay)
+        return 200, {"ok": True, "state": "idle"}
 
     def _on_select(self, card: MatchCard) -> None:
         """Clic en una tarjeta: validar horario y resolver el stream on-demand."""
@@ -1043,7 +1153,28 @@ class ScrapperApp(App):
             log.info("Modo UI: canales (Deporte-Libre)")
             return ChannelsRoot(player=self.player)
         log.info("Modo UI: agenda (ESPN/StreamEast)")
-        return KioskRoot(player=self.player)
+        root = KioskRoot(player=self.player)
+        self._start_remote(root)
+        return root
+
+    def _start_remote(self, root: "KioskRoot") -> None:
+        """Arranca el control remoto web si está habilitado en config/kiosk.yaml."""
+        self.remote = None
+        cfg = root._config.remote
+        if not cfg.enabled:
+            log.info("Control remoto desactivado (remote.enabled: false)")
+            return
+        page = Path(__file__).with_name("remote_page.html").read_text(encoding="utf-8")
+        backend = SimpleNamespace(
+            list_matches=root.remote_list_matches,
+            get_status=root.remote_status,
+            play=root.remote_play,
+            stop=root.remote_stop,
+        )
+        server = RemoteServer(backend, root._run_on_ui, cfg.bind, cfg.port, page)
+        if server.start():
+            self.remote = server
+            log.info("Control remoto en http://%s:%s", cfg.bind, cfg.port)
 
     def _setup_kiosk_window(self) -> None:
         """Fuerza fullscreen y ancla la ventana a HDMI0 (la táctil de 7")."""
@@ -1064,6 +1195,8 @@ class ScrapperApp(App):
             Window.fullscreen = "auto" if mode == "auto" else True
 
     def on_stop(self) -> None:
+        if getattr(self, "remote", None):
+            self.remote.stop()
         if getattr(self, "player", None):
             self.player.stop()
 

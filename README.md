@@ -18,6 +18,7 @@ El enfoque inicial es la **NFL**, pero el sistema está diseñado para ser **gen
 - [Configuración y formato de datos](#configuración-y-formato-de-datos)
 - [Scraping](#scraping)
 - [Interfaz y reproducción](#interfaz-y-reproducción)
+- [Control remoto desde el móvil](#control-remoto-desde-el-móvil)
 - [Seguridad](#seguridad)
 - [Roadmap](#roadmap)
 
@@ -107,7 +108,8 @@ Flujo resumido:
 2. **UI Kivy** (`ui/`): lee `events.json`, muestra botones grandes por partido en HDMI0; al pulsar invoca al controlador de reproducción.
 3. **Reproductor** (`player/`): wrapper de `mpv` que lanza el stream en HDMI1 y permite detener/cambiar de partido.
 4. **Infra/setup** (`setup/`): scripts de provisión (actualizar la RPi, SSH por clave, sudo sin contraseña, Xorg mínimo, autostart kiosk, systemd timer).
-5. **Configuración** (`config/`): `sources.yaml` y fichero de entorno (`.env`) ignorado por git.
+5. **Control remoto web** (`ui/remote.py`): servidor HTTP embebido en la app Kivy; el móvil elige/detiene partidos con la misma lógica que la táctil.
+6. **Configuración** (`config/`): `sources.yaml` y fichero de entorno (`.env`) ignorado por git.
 
 ---
 
@@ -127,6 +129,8 @@ scrapper/
 ├── ui/
 │   ├── __init__.py
 │   ├── app.py              # App Kivy: grid de botones grandes (HDMI0)
+│   ├── remote.py           # Control remoto web: servidor HTTP + API JSON (sin Kivy)
+│   ├── remote_page.html    # Página móvil del control remoto (HTML/JS plano)
 │   └── kiosk.kv            # Layout/estilos de la interfaz táctil
 ├── player/
 │   ├── __init__.py
@@ -427,6 +431,53 @@ Flujo de usuario: **encender → ver la lista de partidos en la pantalla de 7" �
 
 ---
 
+## Control remoto desde el móvil
+
+La app del kiosk sirve una página para el celular, en la misma red local. Desde ahí se ve la misma lista de partidos que en la táctil, se elige uno (se reproduce en la TV igual que al tocarlo en la pantalla de 7"), se detiene y se ve el estado.
+
+**Cómo abrirla:** con el móvil en la misma red Wi-Fi, abre `http://<ip-de-la-pi>:8080` (por ejemplo `http://10.10.0.246:8080`).
+
+- Si hay un partido en curso o buscándose, hay que pulsar **Detener** antes de elegir otro (igual que en la táctil).
+- El estado se actualiza solo cada 2 s; Detener en la táctil se refleja en el móvil.
+- Volumen y pausa siguen en la TV/mando (mpv no los expone). La app Tizen queda fuera de alcance. El modo `canales` no tiene control remoto.
+
+### Configuración (`config/kiosk.yaml`)
+
+| Clave | Default | Descripción |
+|---|---|---|
+| `remote.enabled` | `true` | `false` desactiva el control remoto |
+| `remote.bind` | `"0.0.0.0"` | Dirección de escucha. `"127.0.0.1"` = solo desde la propia Pi (sin acceso por LAN) |
+| `remote.port` | `8080` | Puerto TCP (1-65535) |
+
+```yaml
+remote:
+  enabled: true
+  bind: "0.0.0.0"
+  port: 8080
+```
+
+Un valor inválido registra una advertencia y usa el default. Si el puerto está ocupado, el kiosk arranca igual y el log muestra el aviso.
+
+### API JSON
+
+| Método y ruta | Respuesta |
+|---|---|
+| `GET /api/matches` | 200 `{"ok", "loaded", "source", "matches": [{"id","title","away","home","league","state","status_text","start","playable","unavailable"}]}` |
+| `GET /api/status` | 200 `{"ok", "state": "idle"\|"resolving"\|"playing", "match", "message", "source_label"}` |
+| `POST /api/play` `{"id": "<id>"}` | 202 al iniciar la búsqueda (consultar `/api/status`). 400 petición inválida, 404 `unknown_match` (el id no está en la lista actual), 409 `busy` o `not_playable`, 413 cuerpo > 4 KB, 415 sin `Content-Type: application/json` |
+| `POST /api/stop` | 200 (idempotente). 409 `busy` mientras se busca el stream |
+
+Los errores son `{"ok": false, "error": "<código>", "message": "<texto>"}`. También responden 404/405 (ruta o método desconocidos), 500 `internal` y 503 `ui_timeout` (la pantalla no responde en 5 s).
+
+```bash
+curl http://10.10.0.246:8080/api/matches
+curl -X POST -H 'Content-Type: application/json' -d '{"id":"<id>"}' http://10.10.0.246:8080/api/play
+curl -X POST -H 'Content-Type: application/json' -d '{}' http://10.10.0.246:8080/api/stop
+```
+
+**Seguridad:** no tiene autenticación; es solo para la red local. No abras el puerto en el router. Los POST exigen `Content-Type: application/json` y el servidor no emite cabeceras CORS, de modo que una web externa abierta en el móvil no puede disparar `play`/`stop`.
+
+---
 ## Seguridad
 
 - **Sin contraseñas en el repositorio.** El acceso es por **clave SSH** (ver [Instalación y provisión](#instalación-y-provisión)).
